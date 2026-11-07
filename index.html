@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>ABL Sim — 3Dマッピング・カテーテルアブレーション シミュレータ</title>
+  <meta name="description" content="不整脈アブレーション教育用の3Dマッピングシミュレータ（AFL・PAF・AVNRT・WPW・PVC／RF・クライオ・PFA）" />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><path d='M4 34h14l6-16 8 30 7-22 5 8h16' fill='none' stroke='%2333d1ff' stroke-width='5' stroke-linecap='round' stroke-linejoin='round'/></svg>" />
+</head>
+<body>
+  <div id="app">
+    <header id="topbar">
+      <div class="brand">ABL<b>Sim</b><small>3D Mapping</small></div>
+      <div id="scnName" class="scn"></div>
+      <div id="rhythm" class="badge"></div>
+      <div id="hr" class="hr"></div>
+      <div id="success" class="success"></div>
+      <div class="spacer"></div>
+      <div class="speed" id="speed"></div>
+      <button id="btnNew" class="btn ghost">シナリオ</button>
+    </header>
+    <main id="layout">
+      <section id="viewWrap">
+        <div id="view3d"></div>
+        <div class="viewbar" id="viewbar"></div>
+        <div id="colorbar" class="colorbar"></div>
+        <div id="hud" class="hud"></div>
+        <div id="pad" class="pad"></div>
+        <div id="toasts"></div>
+      </section>
+      <aside id="side">
+        <nav id="tabs"></nav>
+        <div id="panel"></div>
+      </aside>
+      <section id="egmWrap">
+        <div class="egmbar" id="egmbar"></div>
+        <div class="egmscroll"><canvas id="egm"></canvas></div>
+      </section>
+    </main>
+    <footer id="foot">教育用シミュレーションです。実際の診療判断には使用しないでください。特定メーカーの装置を模したものではありません。</footer>
+    <div id="modal" class="modal hidden"></div>
+    <div id="loading" class="loading hidden"><div class="spin"></div><div id="loadingText">心臓モデルを構築中…</div></div>
+  </div>
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>
