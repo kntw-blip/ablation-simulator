@@ -250,7 +250,10 @@ function panelMap() {
         h('button', { class: 'btn', title: 'デモ用：自動で心腔内をスイープ', onclick: () => { ss.autoFam(m.name, m.chamber); renderPanel(); } }, '自動FAM（デモ）')),
       h('div', { class: 'kv' }, h('span', {}, '容積'), h('span', { 'data-live': 'vol' }, `${m.volumeMl().toFixed(0)} ml`), h('span', {}, '点数'), h('span', { 'data-live': 'pts' }, `${m.points.length}`)),
       row(h('label', {}, '不透明度'), h('input', { type: 'range', min: 0.3, max: 1, step: 0.05, value: V.opts.famOpacity ?? 1, oninput: (e) => { V.opts.famOpacity = +e.target.value; m.colorDirty = true; } })),
-      row(h('button', { class: 'btn', onclick: () => { if (confirm('このマップの形状と点を削除しますか？')) { delete ss.maps[m.name]; state.view.famMeshes.get(m.name)?.mesh.removeFromParent(); state.view.famMeshes.delete(m.name); ss.activeMap = Object.keys(ss.maps)[0] || null; renderPanel(); } } }, 'マップ削除')),
+      row(h('button', { class: 'btn' + (state.delArm === m.name ? ' danger' : ''), onclick: () => {
+        if (state.delArm !== m.name) { state.delArm = m.name; renderPanel(); setTimeout(() => { if (state.delArm === m.name) { state.delArm = null; if (state.tab === 'map') renderPanel(); } }, 3000); return; }
+        state.delArm = null; delete ss.maps[m.name]; state.view.famMeshes.get(m.name)?.mesh.removeFromParent(); state.view.famMeshes.delete(m.name); ss.activeMap = Object.keys(ss.maps)[0] || null; renderPanel();
+      } }, state.delArm === m.name ? 'もう一度押すと削除' : 'マップ削除')),
     ));
     out.push(sec('ポイント取得（LAT・電位）',
       row(h('button', { class: 'btn' + (ss.acqOn ? ' on' : ''), onclick: () => { ss.acqOn = !ss.acqOn; renderPanel(); } }, ss.acqOn ? '自動取得 ON' : '自動取得 OFF'),
