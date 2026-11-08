@@ -42,6 +42,16 @@ export class View3D {
     this.propPhase = 0;
     this.resize();
     new ResizeObserver(() => this.resize()).observe(container);
+    // tap / click on a wall -> pick
+    this.raycaster = new THREE.Raycaster();
+    let down = null;
+    r.domElement.addEventListener('pointerdown', (e) => { down = { x: e.clientX, y: e.clientY, t: performance.now() }; });
+    r.domElement.addEventListener('pointerup', (e) => {
+      if (!down) return;
+      const moved = Math.hypot(e.clientX - down.x, e.clientY - down.y), dt = performance.now() - down.t;
+      down = null;
+      if (moved < 7 && dt < 600) this.pick(e);
+    });
   }
   resize() {
     const w = this.el.clientWidth, h = this.el.clientHeight;
@@ -207,7 +217,7 @@ export class View3D {
   // ---- catheters ----
   syncCatheters() {
     const ss = this.ss;
-    for (const k of ['HRA', 'HIS', 'RVA', 'CS', 'ABL', 'MAP']) {
+    for (const k of ['HRA', 'HALO', 'HIS', 'RVA', 'CS', 'ABL', 'MAP']) {
       const show = ss.inserted.has(k);
       let o = this.cathObjs[k];
       if (!o) {
@@ -327,7 +337,38 @@ export class View3D {
     }
   }
 
+  pick(e) {
+    const rect = this.renderer.domElement.getBoundingClientRect();
+    const ndc = new THREE.Vector2(((e.clientX - rect.left) / rect.width) * 2 - 1, -((e.clientY - rect.top) / rect.height) * 2 + 1);
+    this.raycaster.setFromCamera(ndc, this.camera);
+    const ss = this.ss;
+    const fam = this.famMeshes.get(ss.activeMap);
+    let hit = null, famHit = false;
+    if (fam && fam.mesh.visible && fam.mesh.geometry.attributes.position) { hit = this.raycaster.intersectObject(fam.mesh, false)[0]; famHit = !!hit; }
+    if (!hit) {
+      // beyond the current shell: extend towards the (hidden) true wall of the mapped chamber
+      const m = ss.maps[ss.activeMap];
+      const ids = m ? [m.chamber] : ['RA', 'LA', 'RV', 'LV'];
+      hit = this.raycaster.intersectObjects(ids.map((id) => this.truth[id].mesh), false)[0];
+    }
+    if (!hit) return;
+    const p = [hit.point.x, hit.point.y, hit.point.z];
+    const nr = ss.hash.nearest(p, 16);
+    const names = ['RA', 'LA', 'CS', 'RV', 'LV'];
+    let ch = nr.i >= 0 ? names[ss.T.chamber[nr.i]] : null;
+    if (ch === 'CS') ch = 'RA';
+    if (ss.maps[ss.activeMap]) ch = ss.maps[ss.activeMap].chamber; // the map belongs to one chamber
+    void famHit;
+    this.onPick && this.onPick(p, ch);
+    // brief marker
+    if (!this.pickMark) { this.pickMark = new THREE.Mesh(new THREE.RingGeometry(2.2, 3, 24), new THREE.MeshBasicMaterial({ color: 0x33d1ff, side: THREE.DoubleSide, depthTest: false, transparent: true })); this.pickMark.renderOrder = 9; this.scene.add(this.pickMark); }
+    this.pickMark.position.copy(hit.point);
+    if (hit.face) this.pickMark.lookAt(hit.point.clone().add(hit.face.normal));
+    this.pickMark.visible = true; this.pickT = performance.now();
+  }
+
   render() {
+    if (this.pickMark && this.pickMark.visible && performance.now() - this.pickT > 900) this.pickMark.visible = false;
     const ss = this.ss;
     this.truthGroup.visible = this.opts.anatomy || this.opts.truthProp;
     this.colorTruth(false);

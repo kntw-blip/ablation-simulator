@@ -33,7 +33,7 @@ function showPicker(first) {
   m.innerHTML = '';
   m.append(h('div', { class: 'picker' },
     h('h2', {}, '不整脈を選択'),
-    h('p', { class: 'lead' }, 'カテーテルで心腔内をなぞって3Dジオメトリーを作成（FAM）し、心内心電図と興奮伝播マップで回路・起源を同定して、RF／クライオ／パルスフィールドで治療します。', h('br'), '操作：右下の操作パッドまたはキーボード（W/S 前進・後退、A/D 回転、Q/E 屈曲・戻し、Space 通電）。3D表示はドラッグで回転、ホイールでズーム。'),
+    h('p', { class: 'lead' }, 'カテーテルで心腔内をなぞって3Dジオメトリーを作成（FAM）し、心内心電図と興奮伝播マップで回路・起源を同定して、RF／クライオ／パルスフィールドで治療します。', h('br'), '操作：3D画面の壁をタップ（クリック）するとカテーテル先端がそこへ移動します。矢印で微調整、W/S で接触圧、Space で通電。3D表示はドラッグで回転、ホイール／ピンチでズーム。'),
     h('div', { class: 'cards' }, ...Object.entries(SCENARIOS).map(([k, d]) => h('button', { class: 'card', onclick: () => start(k) },
       h('div', { class: 'tag' }, d.short), h('h3', {}, d.name), h('p', {}, d.desc), h('div', { class: 'goal' }, '目標：', d.goal)))),
     first ? null : h('div', { style: 'margin-top:14px;text-align:right' }, h('button', { class: 'btn', onclick: () => m.classList.add('hidden') }, '閉じる')),
@@ -51,8 +51,11 @@ async function start(key) {
   const ss = new Session(key);
   state.ss = ss;
   state.view = new View3D($('#view3d'), ss);
+  state.view.onPick = onPick;
+  state.transseptal = false;
   state.egm = new EGMView($('#egm'), ss);
   state.steer = 'ABL';
+  state.evalResult = null;
   state.view.setView(ss.def.defaultMap === 'LA' ? 'PA' : ss.def.defaultMap === 'RV' ? 'RAO' : 'LAO');
   ss.on('alert', (a) => toast(a.msg, a.level));
   ss.on('log', () => { if (state.tab === 'log') renderPanel(); });
@@ -113,31 +116,55 @@ function updateColorbar() {
 }
 
 // ---------------- steering pad ----------------
-const PAD = [
-  ['flex', '屈曲\nQ'], ['adv', '前進\nW'], ['rel', '戻し\nE'],
-  ['ccw', '反時計\nA'], ['ret', '後退\nS'], ['cw', '時計\nD'],
-  ['srot', 'シース\n回転 Z'], ['stilt', 'シース\n傾け R'], ['energy', '通電\nSpace'],
+// Tap a wall on the 3D map to send the selected catheter there; the pad fine-tunes position and contact force.
+const PAD_FOCAL = [
+  ['push', '押す\nW'], ['up', '↑'], ['pull', '緩める\nS'],
+  ['left', '←'], ['float', '浮かす\nF'], ['right', '→'],
+  ['spin', '回転\nR'], ['down', '↓'], ['energy', '通電\nSpace'],
 ];
+const PAD_PV = [
+  ['push', '押し込む\nW'], ['up', '傾き↑'], ['pull', '引く\nS'],
+  ['left', '傾き←'], ['contrast', '造影'], ['right', '傾き→'],
+  ['', ''], ['down', '傾き↓'], ['energy', '通電\nSpace'],
+];
+function isPvMode() { const ss = state.ss; return state.steer === 'ABL' && DEVICES[ss.abl.device].kind === 'pv'; }
 function buildPad() {
   const el = $('#pad');
   el.innerHTML = '';
   const ss = state.ss;
   const opts = ['ABL', 'MAP'].filter((k) => ss.inserted.has(k));
-  el.append(h('div', { class: 't' }, h('span', {}, '操作対象'), h('select', { onchange: (e) => { state.steer = e.target.value; } }, ...opts.map((k) => h('option', { value: k, selected: state.steer === k ? true : null }, k === 'ABL' ? `ABL（${DEVICES[ss.abl.device].name.split('（')[0]}）` : 'MAP 多極')))));
-  for (const [a, l] of PAD) {
+  if (!opts.includes(state.steer)) state.steer = opts[0] || 'ABL';
+  el.append(h('div', { class: 't' }, h('span', {}, '操作対象'), h('select', { onchange: (e) => { state.steer = e.target.value; buildPad(); } }, ...opts.map((k) => h('option', { value: k, selected: state.steer === k ? true : null }, k === 'ABL' ? `ABL（${DEVICES[ss.abl.device].name.split('（')[0]}）` : 'MAP 多極')))));
+  for (const [a, l] of isPvMode() ? PAD_PV : PAD_FOCAL) {
+    if (!a) { el.append(h('span')); continue; }
+    if (state.steer === 'MAP' && a === 'energy') { el.append(h('span')); continue; }
+    if (state.steer === 'ABL' && a === 'spin' && !isPvMode()) { el.append(h('span')); continue; }
     const b = h('button', { 'data-a': a }, ...l.split('\n').flatMap((x, i) => (i ? [h('br'), x] : [x])));
-    const down = (e) => { e.preventDefault(); if (a === 'energy') { energyToggle(); return; } state.held.set(a, 1); b.classList.add('hold'); };
-    const up = () => { state.held.delete(a); b.classList.remove('hold'); };
+    const down = (e) => {
+      e.preventDefault();
+      if (a === 'energy') { energyToggle(); return; }
+      if (a === 'float') { const c = ss.cath[state.steer]; c.setFloat(!c.floating); b.classList.toggle('hold', c.floating); return; }
+      if (a === 'contrast') { contrast(); return; }
+      state.held.set(a, 1); b.classList.add('hold');
+    };
+    const up = () => { if (a === 'float') return; state.held.delete(a); b.classList.remove('hold'); };
     b.addEventListener('pointerdown', down);
     b.addEventListener('pointerup', up); b.addEventListener('pointerleave', up); b.addEventListener('pointercancel', up);
     el.append(b);
   }
   el.append(h('div', { class: 'val', id: 'padval' }, ''));
+  el.append(h('div', { class: 'val' }, isPvMode() ? '静脈をタップで標的を選択' : '3D上の壁をタップ／クリックで移動'));
 }
-const KEYMAP = { KeyW: 'adv', KeyS: 'ret', KeyA: 'ccw', KeyD: 'cw', KeyQ: 'flex', KeyE: 'rel', KeyZ: 'srot', KeyX: 'srot-', KeyR: 'stilt', KeyF: 'stilt-' };
+function contrast() {
+  const ss = state.ss, g = ss.abl.pvGeom(ss.T);
+  const side = ['下方', '前方', '上方', '後方'][Math.round(((g.leakAng + Math.PI) / (Math.PI / 2))) % 4];
+  toast(g.grade === 4 ? `造影：${ss.abl.pv.target} 完全閉塞（造影剤の停滞）` : g.grade === 3 ? `造影：わずかなリーク（${side}）` : `造影：明らかなリーク（${side}）—位置・向きを調整してください`, g.grade >= 3 ? 'ok' : 'warn');
+}
+const KEYMAP = { KeyW: 'push', KeyS: 'pull', ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right', KeyR: 'spin' };
 window.addEventListener('keydown', (e) => {
   if (!state.ss || e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
   if (e.code === 'Space') { e.preventDefault(); if (!e.repeat) energyToggle(); return; }
+  if (e.code === 'KeyF' && !e.repeat) { const c = state.ss.cath[state.steer]; if (c && c.setFloat) c.setFloat(!c.floating); return; }
   const a = KEYMAP[e.code];
   if (a) { state.held.set(a, 1); e.preventDefault(); }
 });
@@ -147,25 +174,51 @@ function applyHeld(dtms) {
   const ss = state.ss;
   if (!state.held.size) return;
   const k = dtms / 16;
-  const pvDev = state.steer === 'ABL' && DEVICES[ss.abl.device].kind === 'pv';
-  for (const [a] of state.held) {
-    const neg = a.endsWith('-');
-    const act = neg ? a.slice(0, -1) : a;
-    if (pvDev) {
-      const p = ss.abl.pv;
-      if (p.on && ss.abl.device === 'CRYO_BALLOON') continue;
-      if (act === 'adv') p.depth = Math.min(10, p.depth + 0.12 * k);
-      if (act === 'ret') p.depth = Math.max(-6, p.depth - 0.12 * k);
-      if (act === 'flex') p.tiltA = Math.min(30, p.tiltA + 0.5 * k);
-      if (act === 'rel') p.tiltA = Math.max(-30, p.tiltA - 0.5 * k);
-      if (act === 'cw') p.tiltB = Math.min(30, p.tiltB + 0.5 * k);
-      if (act === 'ccw') p.tiltB = Math.max(-30, p.tiltB - 0.5 * k);
-      continue;
+  if (isPvMode()) {
+    const p = ss.abl.pv;
+    if (p.on && ss.abl.device === 'CRYO_BALLOON') return;
+    for (const [a] of state.held) {
+      if (a === 'push') p.depth = Math.min(10, p.depth + 0.1 * k);
+      if (a === 'pull') p.depth = Math.max(-6, p.depth - 0.1 * k);
+      if (a === 'up') p.tiltA = Math.min(30, p.tiltA + 0.4 * k);
+      if (a === 'down') p.tiltA = Math.max(-30, p.tiltA - 0.4 * k);
+      if (a === 'right') p.tiltB = Math.min(30, p.tiltB + 0.4 * k);
+      if (a === 'left') p.tiltB = Math.max(-30, p.tiltB - 0.4 * k);
     }
-    const c = ss.cath[state.steer];
-    if (!c || !ss.inserted.has(state.steer)) continue;
-    c.act(act, neg ? -k : k);
+    return;
   }
+  const c = ss.cath[state.steer];
+  if (!c || !ss.inserted.has(state.steer)) return;
+  const cam = state.view.camera;
+  const right = [cam.matrixWorld.elements[0], cam.matrixWorld.elements[1], cam.matrixWorld.elements[2]];
+  const upv = [cam.matrixWorld.elements[4], cam.matrixWorld.elements[5], cam.matrixWorld.elements[6]];
+  const step = 0.17 * k;
+  for (const [a] of state.held) {
+    if (a === 'push' || a === 'pull') c.act(a, k);
+    else if (a === 'spin') c.spin = (c.spin || 0) + 0.04 * k;
+    else {
+      const v = a === 'up' ? upv : a === 'down' ? upv.map((x) => -x) : a === 'right' ? right : right.map((x) => -x);
+      c.nudge(v.map((x) => x * step));
+    }
+  }
+}
+function onPick(point, chamber) {
+  const ss = state.ss;
+  if (!ss) return;
+  if (isPvMode()) {
+    let best = null, bd = 1e9;
+    for (const [name, v] of Object.entries(ss.T.lm.pv)) { const d = Math.hypot(...v.o.map((x, i) => x - point[i])); if (d < bd) { bd = d; best = name; } }
+    if (best && bd < 30 && !ss.abl.pv.on) { ss.abl.pv.target = best; ss.abl.pv.depth = 2; ss.abl.pv.tiltA = 0; ss.abl.pv.tiltB = 0; if (state.tab === 'abl') renderPanel(); toast(`標的：${best}`, 'info', 1500); }
+    return;
+  }
+  const k = state.steer;
+  if (!ss.inserted.has(k)) { toast('操作するカテーテルが挿入されていません（カテタブ）', 'warn'); return; }
+  const c = ss.cath[k];
+  if (c.locked) { toast('クライオで組織に固着しています（解凍を待ってください）', 'warn'); return; }
+  if (chamber && chamber !== c.access) {
+    if ((chamber === 'LA' || chamber === 'LV') && !state.transseptal) { state.transseptal = true; ss.log('心房中隔穿刺（経中隔アプローチ）', 'info'); }
+  }
+  c.setTarget(point, chamber);
 }
 
 function energyToggle() {
@@ -216,16 +269,18 @@ function panelCath() {
   const item = (k, extra) => row(
     h('button', { class: 'btn' + (ss.inserted.has(k) ? ' on' : ''), style: 'min-width:150px;text-align:left', onclick: () => { ss.inserted.has(k) ? ss.remove(k) : ss.insert(k); buildPad(); renderPanel(); } }, (ss.inserted.has(k) ? '✓ ' : '+ ') + ss.cath[k].def.name),
     extra || null);
-  out.push(sec('診断カテーテル（標準位置に留置）',
-    item('HRA'), item('HIS'),
-    item('RVA', h('select', { onchange: (e) => { ss.cath.RVA.site = e.target.value; } }, ...[['apex', '心尖部'], ['sept', '中隔'], ['rvot', '流出路']].map(([v, l]) => h('option', { value: v, selected: ss.cath.RVA.site === v ? true : null }, l)))),
+  const site = (k, opts) => h('select', { onchange: (e) => { ss.cath[k].site = e.target.value; ss.refNode = null; } }, ...opts.map(([v, l]) => h('option', { value: v, selected: ss.cath[k].site === v ? true : null }, l)));
+  out.push(sec('診断カテーテル（部位を選んで留置）',
+    item('HRA', site('HRA', [['high', '高位側壁'], ['lowlat', '低位側壁'], ['raa', '右心耳'], ['sept', '高位中隔']])),
+    item('HALO'),
+    item('HIS'),
+    item('RVA', site('RVA', [['apex', '心尖部'], ['sept', '中隔'], ['rvot', '流出路']])),
     item('CS', h('span', {}, h('button', { class: 'btn', onclick: () => ss.cath.CS.act('ret') }, '引く'), ' ', h('button', { class: 'btn', onclick: () => ss.cath.CS.act('adv') }, '進める'))),
+    h('div', { class: 'help' }, 'CTIブロックの確認：HRAを低位側壁に置き、CS入口部（CS 9-10）からのペーシングで低位側壁までの伝導時間の延長を、低位側壁（HRA d）からのペーシングでCSの興奮順序の変化を確認します。Halo 20極では三尖弁輪周囲の興奮順序を一度に見られます。'),
   ));
-  const acc = (k) => h('select', { onchange: (e) => { ss.cath[k].setAccess(e.target.value); } }, ...Object.entries(ss.cath[k].presets).map(([v, p]) => h('option', { value: v, selected: ss.cath[k].access === v ? true : null }, p.label)));
   out.push(sec('操作カテーテル',
-    item('ABL'), row(h('label', {}, 'アクセス'), acc('ABL')),
-    item('MAP'), row(h('label', {}, 'アクセス'), acc('MAP')),
-    h('div', { class: 'help' }, '左房・左室へは経中隔アクセスを選択します。シース先端から前進(W/S)、回転(A/D)、屈曲(Q/E)で操作し、シース自体の向きは Z/X（回転）、R/F（傾け）で変えられます。壁に押し付けると接触圧(CF)が上がります。'),
+    item('ABL'), item('MAP'),
+    h('div', { class: 'help' }, '3D画面で壁をタップ（クリック）すると、操作対象のカテーテル先端がその部位へ移動して接触します。矢印（↑↓←→／キーボードの矢印）で位置を微調整、押す／緩める（W/S）で接触圧を調整、浮かす（F）で壁から離します。左房・左室をタップすると経中隔アプローチになります。'),
   ));
   out.push(sec('ヒント',
     h('div', { class: 'help' }, '1. 「マップ」タブで新規マップを作り、FAM記録をONにしてカテーテルで心腔内をくまなくなぞる', h('br'), '2. ポイント自動取得をONにし、頻拍中または洞調律でLAT/電位を取得', h('br'), '3. 「刺激」タブで誘発 → 「焼灼」タブで治療 → 再誘発で効果判定'),
@@ -356,15 +411,32 @@ function panelStim() {
 
 function panelLog() {
   const ss = state.ss, abl = ss.abl;
-  const st = ss.successStatus();
   const out = [];
-  out.push(sec('治療目標', h('div', { class: 'goalbox' }, ss.def.goal), h('div', { class: 'row', style: `color:${st.ok ? 'var(--ok)' : 'var(--warn)'};font-weight:600` }, st.ok ? '✓ ' : '… ', st.text)));
+  const ev = state.evalResult;
+  const goal = sec('治療目標', h('div', { class: 'goalbox' }, ss.def.goal),
+    ev ? null : row(h('button', { class: 'btn pri grow', onclick: () => { state.evalResult = ss.evaluate(); ss.log('手技終了・評価', 'info'); renderPanel(); } }, '手技終了・評価')),
+    ev ? null : h('div', { class: 'help' }, '治療の成否は電位（興奮順序、伝導時間、再誘発）で判断してください。評価を押すと正解が表示されます。'));
+  out.push(goal);
+  if (ev) {
+    const line = (ok, txt) => h('div', { class: 'row', style: `color:${ok ? 'var(--ok)' : 'var(--warn)'};font-weight:600` }, ok ? '✓ ' : '✗ ', txt);
+    out.push(sec('評価',
+      line(ev.now.ok, `現時点：${ev.now.text}`),
+      line(ev.durable.ok, `浮腫回復後（遠隔期の予測）：${ev.durable.text}`),
+      ev.now.ok && !ev.durable.ok ? h('div', { class: 'help' }, '一部が浮腫による一過性ブロックで、時間とともに再伝導する可能性が高い状態です。') : null,
+      h('div', { class: 'kv' },
+        h('span', {}, '一過性ブロック'), h('span', {}, `${ev.transient} ノード`),
+        h('span', {}, '頻拍'), h('span', {}, ev.tachy ? '持続中' : 'なし'),
+        ev.tti ? h('span', {}, '最終TTI') : null, ev.tti ? h('span', {}, `${ev.tti.toFixed(0)} s`) : null,
+        h('span', {}, '合併症'), h('span', {}, ev.comp.length ? ev.comp.join(', ') : 'なし')),
+      row(h('button', { class: 'btn', onclick: () => { state.evalResult = null; renderPanel(); } }, '評価を閉じて続ける')),
+    ));
+  }
   const rf = abl.tags.filter((t) => t.energy === 'RF');
   out.push(sec('サマリー', h('div', { class: 'kv' },
     h('span', {}, '経過時間'), h('span', {}, fmtT(ss.S.t)),
     h('span', {}, 'RF焼灼'), h('span', {}, `${rf.length} 点・合計 ${rf.reduce((a, t) => a + (t.t || 0), 0).toFixed(0)} 秒`),
     h('span', {}, 'クライオ/PFA'), h('span', {}, `${abl.tags.filter((t) => t.energy === 'CRYO').length} / ${abl.pv.total} 回`),
-    h('span', {}, '合併症'), h('span', {}, abl.comp.size ? [...abl.comp].join(', ') : 'なし'),
+    h('span', {}, '合併症'), h('span', {}, abl.comp.size ? `${abl.comp.size} 件` : 'なし'),
   )));
   out.push(sec('ログ', h('div', { class: 'log' }, ...ss.logs.slice().reverse().slice(0, 120).map((l) => h('div', { class: l.level }, h('span', { class: 't' }, fmtT(l.t)), l.msg)))));
   return out;
@@ -409,7 +481,7 @@ function updateHud() {
   } else {
     const p = abl.pv, g = abl.pvGeom(ss.T);
     s += `<div>${p.target}  グレード <b>${g.grade}</b>/4</div>`;
-    if (dev === 'CRYO_BALLOON') s += `<div>温度 <b style="color:var(--cryo)">${p.temp.toFixed(0)} ℃</b> ${p.on ? p.t.toFixed(0) + ' s' : ''} ${p.tti ? 'TTI ' + p.tti.toFixed(0) + 's' : ''}</div><div>CMAP ${p.cmap.toFixed(0)} %</div>`;
+    if (dev === 'CRYO_BALLOON') s += `<div>温度 <b style="color:var(--cryo)">${p.temp.toFixed(0)} ℃</b> ${p.on ? p.t.toFixed(0) + ' s' : ''} </div><div>CMAP ${p.cmap.toFixed(0)} %</div>`;
     else s += `<div>${p.form === 'flower' ? 'フラワー' : 'バスケット'} 回転${p.rot}°  照射 ${p.apps[p.target] || 0}</div>`;
   }
   s += `<div style="color:${abl.eso > 39 || abl.eso < 25 ? 'var(--bad)' : 'var(--mut)'}">食道温 ${abl.eso.toFixed(1)} ℃</div>`;
@@ -417,7 +489,7 @@ function updateHud() {
   const pv = $('#padval');
   if (pv) {
     const st = state.steer, cc = ss.cath[st];
-    pv.textContent = DEVICES[dev].kind === 'pv' && st === 'ABL' ? `押込${abl.pv.depth.toFixed(1)} 傾${abl.pv.tiltA.toFixed(0)}/${abl.pv.tiltB.toFixed(0)}` : cc && cc.adv !== undefined ? `前進${cc.adv.toFixed(0)}mm 回転${cc.rot.toFixed(0)}° 屈曲${Math.round(cc.defl * 100)}%` : '';
+    pv.textContent = DEVICES[dev].kind === 'pv' && st === 'ABL' ? `押込${abl.pv.depth.toFixed(1)}mm 傾${abl.pv.tiltA.toFixed(0)}/${abl.pv.tiltB.toFixed(0)}°` : cc ? (cc.floating ? '浮遊（非接触）' : `設定接触圧 ${cc.cfSet.toFixed(0)} g`) : '';
   }
 }
 function updateStatus() {
@@ -428,10 +500,7 @@ function updateStatus() {
   b.classList.toggle('tachy', r.label !== '洞調律' && !r.label.startsWith('洞調律'));
   const rt = state.paused ? '' : (state.rt ?? 1) < state.speed * 0.92 ? `  実時間比 ×${(state.rt ?? 1).toFixed(2)}` : '';
   $('#hr').textContent = `HR ${r.hr || '--'}  ${fmtT(ss.S.t)}${rt}`;
-  const st = ss.successStatus();
-  const sEl = $('#success');
-  sEl.textContent = st.text;
-  sEl.classList.toggle('ok', st.ok);
+  $('#success').textContent = '';
 }
 
 // ---------------- main loop ----------------

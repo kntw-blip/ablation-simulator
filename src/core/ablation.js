@@ -81,9 +81,6 @@ export class Ablation {
   onVirtualKilled(v) {
     const n = v.name;
     if (n === 'CN' || n === 'HIS') this.complication('AVB', '完全房室ブロック：His束近傍の焼灼により房室伝導が途絶しました（ペースメーカ植込みが必要）');
-    else if (n.startsWith('FP')) this.log('速伝導路の傷害（PR延長）', 'warn');
-    else if (n.startsWith('SP')) this.log('遅伝導路が焼灼されました', 'ok');
-    else if (n.startsWith('AP')) this.log('副伝導路が焼灼されました', 'ok');
   }
   // heating near slow pathway produces junctional rhythm; near compact node -> warn
   heatEffects(pos, radius) {
@@ -279,7 +276,7 @@ export class Ablation {
       }
       if (tl < -36) S.blockUntil[i] = Math.max(S.blockUntil[i], S.t + 2500); // frozen tissue does not conduct
     }
-    if (!p.tti && !p.wasIso && Math.floor(p.t) !== Math.floor(p.t - dt) && this.ctx.pvIso()[p.target]) { p.tti = p.t; this.log(`隔離確認（TTI ${p.t.toFixed(0)} s）`, 'ok'); }
+    if (!p.tti && !p.wasIso && Math.floor(p.t) !== Math.floor(p.t - dt) && this.ctx.pvIso()[p.target]) p.tti = p.t; // kept for the final evaluation only
     // phrenic nerve (right veins)
     if (p.target === 'RSPV' || p.target === 'RIPV') {
       const risk = (p.target === 'RSPV' ? 1 : 0.5) * Math.max(0, p.depth - 2) / 4;

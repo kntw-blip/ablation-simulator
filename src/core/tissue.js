@@ -207,10 +207,10 @@ export function buildTissue(opts = {}) {
   const restR = new Float32Array(nTot).fill(0.4); // ERP restitution strength
   for (let i = 0; i < nTot; i++) {
     const r = region[i];
-    let c = chArr[i] === CH.RA ? 0.52 : 0.8, e = chArr[i] === CH.RA ? 185 : 200, t = 2, a = 2.5 + R() * 1.5, ex = 1;
+    let c = chArr[i] === CH.RA ? 0.42 : 0.8, e = chArr[i] === CH.RA ? 185 : 200, t = 2, a = 2.5 + R() * 1.5, ex = 1;
     switch (r) {
       case REG.CT: c = 0; ex = 0; t = 5; a = 2.5; break;
-      case REG.CTI: c = 0.36; t = 3.5; a = 2.2 + R(); break;
+      case REG.CTI: c = 0.55; t = 3.5; a = 2.2 + R(); break;
       case REG.SVC: c = 0.6; t = 1.5; a = 1.2 + R() * 0.6; break;
       case REG.RAA: t = 1.5; break;
       case REG.KOCH: c = 0.6; t = 3; a = 1.5 + R(); break;
@@ -254,7 +254,7 @@ export function buildTissue(opts = {}) {
     for (let i = 0; i < nMesh; i++) {
       if (chamber[i] !== CH.RA || !excit[i]) continue;
       const d = sub(P(i), bandCenter);
-      if (Math.abs(dot(d, u)) < 3.5 && len(d) < 26 && P(i)[1] < bandCenter[1] + 10) { erp[i] = 250; restR[i] = 0.1; region[i] = REG.CTI; }
+      if (Math.abs(dot(d, u)) < 3.5 && len(d) < 26 && P(i)[1] < bandCenter[1] + 10) { erp[i] = 235; restR[i] = 0.1; region[i] = REG.CTI; }
     }
     lm.ctiBand = bandCenter;
   }

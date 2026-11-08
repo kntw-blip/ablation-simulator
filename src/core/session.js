@@ -11,6 +11,8 @@ import { dist, add, mul } from './vec.js';
 
 export const PACE_SITES = {
   HRA12: { label: 'HRA d', cath: 'HRA', e: 'HRA_1' },
+  HALO12: { label: 'Halo 1-2', cath: 'HALO', e: 'HALO_1' },
+  HALO1920: { label: 'Halo 19-20', cath: 'HALO', e: 'HALO_19' },
   CS910: { label: 'CS 9-10', cath: 'CS', e: 'CS_9' },
   CS12: { label: 'CS 1-2', cath: 'CS', e: 'CS_1' },
   RV12: { label: 'RV d', cath: 'RVA', e: 'RVA_1' },
@@ -39,7 +41,7 @@ export class Session {
     });
     this.cath = {};
     this.inserted = new Set();
-    for (const k of ['HRA', 'HIS', 'RVA', 'CS']) this.cath[k] = new FixedCatheter(k, T.heart, T);
+    for (const k of ['HRA', 'HALO', 'HIS', 'RVA', 'CS']) this.cath[k] = new FixedCatheter(k, T.heart, T);
     this.cath.ABL = new SteerableCatheter('ABL', T.heart, T);
     this.cath.MAP = new SteerableCatheter('MAP', T.heart, T);
     this.maps = {};
@@ -91,11 +93,11 @@ export class Session {
   }
   remove(k) {
     this.inserted.delete(k);
-    this.E.removeElectrodes(k === 'RVA' ? 'RVA_' : k + '_');
+    this.E.removeElectrodes(k + '_');
     this.refreshChannels();
   }
   refreshChannels() {
-    const order = ['HRA', 'HIS', 'CS', 'RVA', 'ABL', 'MAP'];
+    const order = ['HRA', 'HALO', 'HIS', 'CS', 'RVA', 'ABL', 'MAP'];
     const list = [];
     for (const k of order) if (this.inserted.has(k)) list.push(...channelDefs(this.cath[k]));
     this.channelList = list;
@@ -356,6 +358,18 @@ export class Session {
     }
     return { ok: false, text: '' };
   }
+  // final evaluation (shown only when the operator ends the procedure)
+  evaluate() {
+    const S = this.S;
+    const now = this.successStatus();
+    const saved = S.blockUntil.slice();
+    S.blockUntil.fill(0);
+    const durable = this.successStatus();
+    S.blockUntil.set(saved);
+    let transient = 0;
+    for (let i = 0; i < this.T.n; i++) if (saved[i] > S.t && S.alive[i]) transient++;
+    return { now, durable, transient, tachy: this.tachy(), comp: [...this.abl.comp], tti: this.abl.pv.tti };
+  }
   waitEdema() {
     const S = this.S;
     let n = 0;
@@ -399,7 +413,7 @@ export class Session {
       const iso = pvIsolationStatus(this.st);
       for (const v of Object.values(this.st.pv)) {
         if (iso[v.name] && !v.isolated) { v.isolated = true; }
-        else if (!iso[v.name] && v.isolated) { v.isolated = false; if (v.active) this.log(`${v.name} 再伝導`, 'warn'); }
+        else if (!iso[v.name] && v.isolated) v.isolated = false;
       }
       const drivers = Object.values(this.st.pv).filter((v) => v.firing && !v.isolated);
       if (this.st.pvpm.af && !drivers.length) { this.st.pvpm.af = false; this.log('AF停止（ドライバー消失）', 'ok'); }
