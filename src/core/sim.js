@@ -45,6 +45,7 @@ export class Sim {
     this.origin = new Int8Array(n);
     this.alive = new Uint8Array(T.excit);
     this.blockUntil = new Float64Array(n); // transient block (edema / cryo-mapping)
+    this.concealUntil = new Float64Array(n);
     this.erpMul = new Float32Array(n).fill(1);
     this.repol = new Float32Array(n);
     this.apdOff = new Float32Array(n);
@@ -79,7 +80,8 @@ export class Sim {
     const T = this.T;
     const DI = t - this.refrEnd[i];
     const di = DI > 0 ? DI : 0;
-    const e = T.erp[i] * this.erpMul[i] * (1 - T.restR[i] * Math.exp(-di / 80)) / (T.chamber[i] === CH.VIRT ? Math.sqrt(this.iso) : 1);
+    let e = T.erp[i] * this.erpMul[i] * (1 - T.restR[i] * Math.exp(-di / 80)) / (T.chamber[i] === CH.VIRT ? Math.sqrt(this.iso) : 1);
+    if (this.avJitter && T.decr[i] > 0) e *= 0.75 + 0.5 * Math.random(); // irregular AV-nodal refractoriness during fibrillatory input
     const apd = e + 12 + this.apdOff[i];
     this.lastAct[i] = t; this.refrEnd[i] = t + e; this.apd[i] = apd; this.origin[i] = o;
     const ms = Math.floor(t);
@@ -113,7 +115,14 @@ export class Sim {
       while (H.n > 0 && H.t[0] <= tn) {
         H.pop();
         const ta = H.rt, j = H.ri;
-        if (!this.alive[j] || this.blockUntil[j] > ta || ta < this.refrEnd[j] || ta - this.lastAct[j] < 1) continue;
+        if (!this.alive[j] || this.blockUntil[j] > ta || ta - this.lastAct[j] < 1) continue;
+        if (ta < this.refrEnd[j]) {
+          // concealed conduction: a blocked impulse late in the refractory period prolongs AV-nodal refractoriness
+          if (this.T.decr[j] > 0 && ta > this.lastAct[j] + 0.55 * (this.refrEnd[j] - this.lastAct[j]) && this.concealUntil[j] < ta) {
+            this.refrEnd[j] += 18 + 30 * Math.random(); this.concealUntil[j] = ta + 25;
+          }
+          continue;
+        }
         this.activate(j, ta, H.ro);
       }
       // clear bucket that will be reused

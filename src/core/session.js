@@ -341,6 +341,7 @@ export class Session {
     else if (key === 'PAF' && this.st.pvpm.af && this.atrialCL() < 300) label = '心房細動';
     else if (key === 'AFL' && this.atrialCL() < 330) label = `心房粗動 (CL ${Math.round(this.atrialCL())} ms)`;
     else if ((key === 'AVNRT' || key === 'WPW') && this.tachy()) label = `${key === 'AVNRT' ? 'AVNRT' : 'ORT'} (CL ${Math.round(rr)} ms)`;
+    else if (this.atrialCL() < 330) label = `心房頻拍／粗動 (CL ${Math.round(this.atrialCL())} ms)`;
     if (this.abl.comp.has('AVB')) label += '・完全房室ブロック';
     const pvcs = vb.filter((b) => b.o === ORIGIN.PVC).length;
     if (key === 'PVC' && pvcs) label += `・PVC`;

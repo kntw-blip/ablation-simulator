@@ -204,10 +204,10 @@ export function buildTissue(opts = {}) {
   const cv = new Float32Array(nTot), erp = new Float32Array(nTot), thick = new Float32Array(nTot);
   const amp = new Float32Array(nTot), gain = new Float32Array(nTot), excit = new Uint8Array(nTot);
   const decr = new Float32Array(nTot); // decremental strength
-  const restR = new Float32Array(nTot).fill(0.4); // ERP restitution strength
+  const restR = new Float32Array(nTot).fill(0.3); // ERP restitution strength
   for (let i = 0; i < nTot; i++) {
     const r = region[i];
-    let c = chArr[i] === CH.RA ? 0.42 : 0.8, e = chArr[i] === CH.RA ? 185 : 200, t = 2, a = 2.5 + R() * 1.5, ex = 1;
+    let c = chArr[i] === CH.RA ? (scenario === 'AFL' ? 0.42 : 0.62) : 0.8, e = chArr[i] === CH.RA ? 185 : 200, t = 2, a = 2.5 + R() * 1.5, ex = 1;
     switch (r) {
       case REG.CT: c = 0; ex = 0; t = 5; a = 2.5; break;
       case REG.CTI: c = 0.55; t = 3.5; a = 2.2 + R(); break;
@@ -262,15 +262,17 @@ export function buildTissue(opts = {}) {
     // spatially heterogeneous refractoriness + patchy fibrosis (substrate for fibrillatory conduction)
     const atrial = [];
     for (let i = 0; i < nMesh; i++) if (chamber[i] === CH.LA || chamber[i] === CH.RA) atrial.push(i);
-    const centers = Array.from({ length: 40 }, () => [P(atrial[Math.floor(R() * atrial.length)]), 0.8 + R() * 0.45]);
+    const centers = Array.from({ length: 40 }, () => [P(atrial[Math.floor(R() * atrial.length)]), 0.88 + R() * 0.3]);
     for (const i of atrial) {
       let w = 0, m = 0;
       for (const [c, f] of centers) { const d = dist(P(i), c); const k = Math.exp(-(d * d) / 150); w += k; m += k * f; }
       const mult = w > 0.05 ? m / w : 1;
       erp[i] *= chamber[i] === CH.LA ? mult : 0.5 + 0.5 * mult;
-      cv[i] *= 0.85 + R() * 0.3;
-      if (chamber[i] === CH.LA && region[i] !== REG.PV && R() < 0.035) { excit[i] = 0; amp[i] = 0.2 + R() * 0.3; }
+      cv[i] *= 0.92 + R() * 0.16;
+      if (chamber[i] === CH.LA && region[i] !== REG.PV && R() < 0.015) { excit[i] = 0; amp[i] = 0.2 + R() * 0.3; }
     }
+    // coronary sinus musculature: longer refractoriness (prevents CS-dependent biatrial reentry after PVI)
+    for (let i = 0; i < nMesh; i++) if (chamber[i] === CH.CS) erp[i] = 245;
   }
   if (scenario === 'PVC') {
     focus.pvc = { pos: lm.rvotFocus, nodes: within('RV', lm.rvotFocus, 3.5), depth: 2.5 };

@@ -103,6 +103,7 @@ export function createScenario(key, seed = 7) {
       },
     };
     S.pacemakers.push(pm);
+    S.avJitter = true;
     st.pvpm = pm;
     st.startAF = () => {
       pm.af = true;

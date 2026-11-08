@@ -1,5 +1,9 @@
 // Headless end-to-end check: each scenario is inducible, terminated by the correct ablation, and non-inducible afterwards.
 import { Session } from '../src/core/session.js';
+import { rng } from '../src/core/vec.js';
+
+// deterministic run (sinus jitter, focus timing and noise use Math.random)
+Math.random = rng(20261108);
 import { lerp, dist, sub, mul } from '../src/core/vec.js';
 
 function rfAt(ss, p, sec = 30, W = 35, cf = 15) {
@@ -36,6 +40,16 @@ for (const key of ['AFL', 'AVNRT', 'WPW', 'PVC', 'PAF']) {
   ss.induce();
   const reinduced = key === 'PVC' ? false : waitTachy(ss, 45);
   const ok = induced && success && terminated && !reinduced && !abl.comp.size;
+  if (!ok) {
+    const t = S.t, by = {};
+    for (let i = 0; i < T.nMesh; i++) {
+      if (!S.alive[i] || !T.excit[i] || t - S.lastAct[i] > 400) continue;
+      const r = ['RA', 'LA', 'CS', 'RV', 'LV'][T.chamber[i]] + ':' + T.region[i];
+      (by[r] = by[r] || []).push(Math.round(t - S.lastAct[i]));
+    }
+    console.log(key, 'diagnostics: atrialCL', Math.round(ss.atrialCL()), 'status', ss.successStatus().text, 'af', ss.st.pvpm?.af);
+    for (const [r, a] of Object.entries(by)) { a.sort((x, y) => x - y); console.log('  ', r, a.length, a[0], a[a.length >> 1], a[a.length - 1]); }
+  }
   results.push({ key, induced, success, terminated, reinduced, complications: [...abl.comp].join(',') || '-', ok });
 }
 console.table(results);
