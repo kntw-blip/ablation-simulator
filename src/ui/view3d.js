@@ -29,7 +29,7 @@ export class View3D {
     this.scene.add(new THREE.HemisphereLight(0xdde8ff, 0x202430, 0.9));
     this.key = new THREE.DirectionalLight(0xffffff, 1.1);
     this.scene.add(this.key);
-    this.opts = { anatomy: false, truthProp: false, mapMode: 'shell', points: false, tags: true, latRange: null, voltLo: 0.5, voltHi: 1.5, xray: false };
+    this.opts = { anatomy: true, truthProp: false, mapMode: 'shell', points: false, tags: true, latRange: null, voltLo: 0.5, voltHi: 1.5, xray: false };
     this.setView('AP');
     this.buildTruth();
     this.famGroup = new THREE.Group(); this.scene.add(this.famGroup);

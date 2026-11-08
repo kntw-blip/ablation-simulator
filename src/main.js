@@ -7,6 +7,7 @@ import { EGMView } from './ui/egmview.js';
 import { ECG_LEADS } from './core/egm.js';
 import { latColor } from './core/fam.js';
 import { polyDist } from './core/vec.js';
+import { Guide, startTour } from './ui/guide.js';
 
 const $ = (s) => document.querySelector(s);
 function h(tag, attrs = {}, ...kids) {
@@ -25,7 +26,9 @@ function h(tag, attrs = {}, ...kids) {
 }
 const fmtT = (ms) => { const s = Math.floor(ms / 1000); return `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`; };
 
-const state = { ss: null, view: null, egm: null, speed: 1, paused: false, tab: 'cath', steer: 'ABL', held: new Map(), lastUi: 0, lastRebuild: 0, rfHold: false };
+const lsGet = (k, d) => { try { const v = localStorage.getItem(k); return v === null ? d : v; } catch { return d; } };
+const lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch { /* storage unavailable */ } };
+const state = { beginner: lsGet('ablsim_mode', 'beginner') === 'beginner', ss: null, view: null, egm: null, speed: 1, paused: false, tab: 'cath', steer: 'ABL', held: new Map(), lastUi: 0, lastRebuild: 0, rfHold: false };
 
 // ---------------- scenario picker ----------------
 function showPicker(first) {
@@ -33,6 +36,9 @@ function showPicker(first) {
   m.innerHTML = '';
   m.append(h('div', { class: 'picker' },
     h('h2', {}, '不整脈を選択'),
+    h('div', { class: 'modesel' },
+      h('button', { class: state.beginner ? 'on' : '', onclick: () => { state.beginner = true; lsSet('ablsim_mode', 'beginner'); showPicker(first); } }, h('b', {}, '初心者モード'), h('span', {}, '画面の操作説明と、手順ガイド（やること・電位の読み方）を表示します')),
+      h('button', { class: !state.beginner ? 'on' : '', onclick: () => { state.beginner = false; lsSet('ablsim_mode', 'normal'); showPicker(first); } }, h('b', {}, '通常モード'), h('span', {}, 'ガイドなしで自分の判断で進めます'))),
     h('p', { class: 'lead' }, 'カテーテルで心腔内をなぞって3Dジオメトリーを作成（FAM）し、心内心電図と興奮伝播マップで回路・起源を同定して、RF／クライオ／パルスフィールドで治療します。', h('br'), '操作：3D画面の壁をタップ（クリック）するとカテーテル先端がそこへ移動します。矢印で微調整、W/S で接触圧、Space で通電。3D表示はドラッグで回転、ホイール／ピンチでズーム。'),
     h('div', { class: 'cards' }, ...Object.entries(SCENARIOS).map(([k, d]) => h('button', { class: 'card', onclick: () => start(k) },
       h('div', { class: 'tag' }, d.short), h('h3', {}, d.name), h('p', {}, d.desc), h('div', { class: 'goal' }, '目標：', d.goal)))),
@@ -66,7 +72,12 @@ async function start(key) {
   buildViewbar(); buildPad(); buildEgmBar(); buildTabs(); buildSpeed();
   renderPanel();
   L.classList.add('hidden');
-  toast(`目標：${SCENARIOS[key].goal}`, 'ok', 7000);
+  if (state.guide) state.guide.destroy();
+  state.guide = null;
+  if (state.beginner) {
+    state.guide = new Guide($('#guide'), ss, state.view);
+    if (lsGet('ablsim_tour_seen', '0') !== '1') { lsSet('ablsim_tour_seen', '1'); setTimeout(startTour, 300); }
+  } else toast(`目標：${SCENARIOS[key].goal}`, 'ok', 7000);
 }
 
 // ---------------- toasts ----------------
@@ -529,6 +540,7 @@ function frame(now) {
   if (now - state.lastUi > 250) {
     state.lastUi = now;
     updateHud(); updateStatus(); updateColorbar();
+    if (state.guide) state.guide.tick();
     updateLive();
   }
 }
