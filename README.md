@@ -94,3 +94,7 @@ test/       ヘッドレスのシナリオテスト
 
 `main` ブランチへのpushで `.github/workflows/deploy.yml` がテスト・ビルドし、GitHub Pagesへデプロイします。
 初回のみ、リポジトリの **Settings → Pages → Build and deployment → Source** を **GitHub Actions** に設定してください。
+
+## ライセンス
+
+[MIT License](LICENSE)。教育用シミュレーションであり、診療判断への使用は想定していません（ライセンスの無保証条項も参照）。
